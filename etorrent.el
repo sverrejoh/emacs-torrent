@@ -59,6 +59,7 @@
   (let ((metainfo (make-hash-table :test 'equal)))
     (when (file-readable-p file)
       (with-temp-buffer
+        (set-buffer-multibyte nil)
         (insert-file-contents file)
         (goto-char (point-min))
         (etorrent-bencode-to-value)))))
