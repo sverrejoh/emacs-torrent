@@ -1,20 +1,57 @@
-;; etorrent.el --- An Emacs Bittorrent Client
-;; Author: Sverre Johansen (sverre.johansen@gmail.com)
+;;; etorrent.el --- An Emacs Bittorrent Client
+;;; Author: Sverre Johansen (sverre.johansen@gmail.com)
 
 ;; Usage
 
 ;; M-x etorrent RET
 (setq debug-on-error t)
 
+
 ;;; Code:
-(defun etorrent ()
-  "Bittorrent client for emacs"
-  (interactive)
-  (message "Welcome to Emact Bittorrent"))
+
+(require 'sha1)
+
+;;;
+;;; external Emacs Torrent functions
+;;;
+
+(defun etorrent-download-file (file)
+  (interactive "fTorrent File: ")
+  (let ((metainfo (etorrent-parse-torrent file)))
+    (download-tracker-response metainfo)))
+
+;;;
+;;; internal Emacs Torrent functions
+;;;
+
+(defun download-tracker-response (metainfo)
+;  (let* ((info-hash (etorrent-escape-url (sha1
+                                          (etorrent-value-to-bencode
+                                           (gethash "info" metainfo)))
+;;;          (peer-id "-AZ2060-QWERTYUIOPAS")
+;;;          (port "6889")
+;;;          (uploaded "0")
+;;;          (downloaded "0")
+;;;          (left "0")
+;;;          (url (concat (gethash "announce" metainfo)
+;;;                       "?"
+;;;                       "info-hash=" info-hash "&"
+;;;                       "peer-id=" peer-id "&"
+;;;                       "port=" port "&"
+;;;                       "uploaded=" uploaded "&"
+;;;                       "downloaded=" downloaded "&"
+;;;                       "left=" left))
+;;;          (url-request-method "GET"))
+;;; ;;;          (result 
+;;; ;;; 	  (save-excursion
+;;; ;;; 	    (set-buffer (url-retrieve-synchronously url))
+;;; ;;;             (progn (goto-char (point-min))
+;;; ;;; 		   (delete-region (point-min) (search-forward "\n\n"))
+;;; ;;; 		   (buffer-substring (point-min) (point-max))))))
+;;;     url))
 
 (defun etorrent-parse-torrent (file)
   "Parses a bittorrent file into a Lisp datastructure"
-  (interactive "fTorrent File: ")
   (etorrent-metainfo-to-hash file))
 
 (defun etorrent-metainfo-to-hash (file)
@@ -42,7 +79,7 @@
     (message (concat "ERROR: " (char-to-string (char-after)))))))
 
 (defun etorrent-bencode-parse-dict ()
-  (message "Dict")
+  "dictionary encoded as d<contents>e"
   (forward-char)
   (let ((dict (make-hash-table :test 'equal))
         (key (etorrent-bencode-to-value))
@@ -55,18 +92,68 @@
 
 (defun etorrent-bencode-parse-string ()
   "A byte string is encoded as <length>:<contents>"
-  (let ((string-length (string-to-int
-                         (buffer-substring (point)
-                                           (- (search-forward ":") 1)))))
-    (buffer-substring (point) (+ (point) string-length))))
+  (let* ((length-string (buffer-substring (point) (- (search-forward ":") 1)))
+         (string-length (string-to-int length-string))
+         (string-start (point)))
+    (forward-char string-length)
+    (buffer-substring string-start (+ string-start string-length))))
 
 (defun etorrent-bencode-parse-integer ()
-  (message "Integer")
-  nil)
+  "integer encoded as i<number in base 10 notation>e"
+  (forward-char)
+  (string-to-int (buffer-substring (point) (- (search-forward "e") 1))))
 
 (defun etorrent-bencode-parse-list ()
-  (message "List")
-  nil)
+  "list of values is encoded as l<contents>e"
+  (forward-char)
+  (let ((content nil)
+        (value (etorrent-bencode-to-value)))
+    (while value
+      (append content value)
+      (setq value (etorrent-bencode-to-value)))
+    content))
 
-(defun etorrent-print-metainfo (metainfo)
-  metainfo)
+(defun etorrent-value-to-bencode (value)
+  "Encodes a lisp value into bencode"
+  (cond
+   ((integerp value)
+    (concat "i" (number-to-string value) "e"))
+   ((stringp value)
+    (concat (number-to-string (length value)) ":" value))
+   ((listp value)
+    (concat "l"
+            (mapconcat 'etorrent-value-to-bencode value "")
+            "e"))
+   ((hash-table-p value)
+    ;(etorrent-hash-to-sorted-list value))
+    (concat "d"
+            (mapconcat '(lambda (x)
+                          (concat (etorrent-value-to-bencode (first x))
+                                  (etorrent-value-to-bencode (second x))))
+                       (etorrent-hash-to-sorted-list value)
+                       "")
+            "e"))))
+                         
+(defun etorrent-hash-to-sorted-list (hashtable)
+  "Return a list that represent the hashtable."
+  (let (mylist)
+    (maphash (lambda (kk vv)
+               (setq mylist (cons (list kk vv) mylist)))
+             hashtable)
+    (sort mylist (lambda (a b) (string< (car a) (car b))))))
+
+;; Copied from emacs-wiki, which copied it from w3m-url-encode-string (w3m.el)
+(defun etorrent-escape-url (str)
+  (apply (function concat)
+	 (mapcar
+	  (lambda (ch)
+	    (cond
+	     ((eq ch ?\n)		; newline
+	      "%0D%0A")
+	     ((string-match "[-a-zA-Z0-9_:/.]" (char-to-string ch)) ; xxx?
+	      (char-to-string ch))	; printable
+	     (t
+	      (format "%%%02x" ch))))	; escape
+	  ;; Coerce a string into a list of chars.
+	  (append (encode-coding-string (or str "") 'raw-text)
+		  nil))))
