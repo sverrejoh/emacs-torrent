@@ -4,10 +4,14 @@
 ;; Usage
 
 ;; M-x etorrent RET
+
+;; Development Settings
 (setq debug-on-error t)
 
+(make-local-variable 'after-save-hook)
+(add-hook 'after-save-hook (lambda () (eval-buffer)))
 
-;;; Code:
+;;; Code: 
 
 (require 'sha1)
 
@@ -18,13 +22,13 @@
 (defun etorrent-download-file (file)
   (interactive "fTorrent File: ")
   (let ((metainfo (etorrent-parse-torrent file)))
-    (download-tracker-response metainfo)))
+    (etorrent-download-tracker-response metainfo)))
 
 ;;;
 ;;; internal Emacs Torrent functions
 ;;;
 
-(defun download-tracker-response (metainfo)
+(defun etorrent-download-tracker-response (metainfo)
 ;  (let* ((info-hash (etorrent-escape-url (sha1
                                           (etorrent-value-to-bencode
                                            (gethash "info" metainfo)))
@@ -59,7 +63,6 @@
   (let ((metainfo (make-hash-table :test 'equal)))
     (when (file-readable-p file)
       (with-temp-buffer
-        (set-buffer-multibyte nil)
         (insert-file-contents file)
         (goto-char (point-min))
         (etorrent-bencode-to-value)))))
@@ -72,12 +75,12 @@
     (etorrent-bencode-parse-integer))
    ((equal (char-to-string (char-after)) "l")
     (etorrent-bencode-parse-list))
-   ((equal (char-to-string (char-after)) "e")
-    nil)
    ((string-match "[0-9]" (char-to-string (char-after)))
     (etorrent-bencode-parse-string))
+   ((equal (char-to-string (char-after)) "e")
+    'end)
    (t
-    (message (concat "ERROR: " (char-to-string (char-after)))))))
+    (message (concat "ERROR: " (char-to-string (following-char)))))))
 
 (defun etorrent-bencode-parse-dict ()
   "dictionary encoded as d<contents>e"
@@ -85,10 +88,11 @@
   (let ((dict (make-hash-table :test 'equal))
         (key (etorrent-bencode-to-value))
         (value (etorrent-bencode-to-value)))
-    (while key
+    (while (not (eq key 'end))
       (puthash key value dict)
       (setq key (etorrent-bencode-to-value))
       (setq value (etorrent-bencode-to-value)))
+    (forward-char)
     dict))
 
 (defun etorrent-bencode-parse-string ()
@@ -109,9 +113,10 @@
   (forward-char)
   (let ((content nil)
         (value (etorrent-bencode-to-value)))
-    (while value
+    (while (not (eq value 'end))
       (append content value)
       (setq value (etorrent-bencode-to-value)))
+    (forward-char)
     content))
 
 (defun etorrent-value-to-bencode (value)
@@ -158,3 +163,26 @@
 	  ;; Coerce a string into a list of chars.
 	  (append (encode-coding-string (or str "") 'raw-text)
 		  nil))))
+
+(defun etorrent-file-to-string (file)
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert-file-contents file)
+    (goto-char (point-min))
+    (buffer-substring (point-min) (point-max))))
+
+(defun hash-dump-content (hash)
+  "Dumps the content of a hash as a key/value string"
+  (let ((content ""))
+    (maphash '(lambda (key value)
+                (setq content
+                      (concat content "Key:" key "\n" "Value: "
+                              (prin1-to-string value) "\n\n")))
+             hash)
+    content))
+
+;; Debug
+
+;(hash-dump-content
+; (etorrent-parse-torrent "/home/sverrej/Desktop/crysis.torrent"))
+
