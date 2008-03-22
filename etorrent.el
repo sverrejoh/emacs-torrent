@@ -14,6 +14,8 @@
 ;;; Code: 
 
 (require 'sha1)
+(require 'calc)
+(require 'calc-ext)
 
 ;;;
 ;;; external Emacs Torrent functions
@@ -106,7 +108,7 @@
 (defun etorrent-bencode-parse-integer ()
   "integer encoded as i<number in base 10 notation>e"
   (forward-char)
-  (string-to-int (buffer-substring (point) (- (search-forward "e") 1))))
+  (math-read-number (buffer-substring (point) (- (search-forward "e") 1))))
 
 (defun etorrent-bencode-parse-list ()
   "list of values is encoded as l<contents>e"
@@ -114,7 +116,8 @@
   (let ((content nil)
         (value (etorrent-bencode-to-value)))
     (while (not (eq value 'end))
-      (append content value)
+      ; FIXME: Better way to add a value to a list???
+      (setq content (append content (list value)))
       (setq value (etorrent-bencode-to-value)))
     (forward-char)
     content))
@@ -122,8 +125,8 @@
 (defun etorrent-value-to-bencode (value)
   "Encodes a lisp value into bencode"
   (cond
-   ((integerp value)
-    (concat "i" (number-to-string value) "e"))
+   ((math-numberp value)
+    (concat "i" (math-format-number value) "e"))
    ((stringp value)
     (concat (number-to-string (length value)) ":" value))
    ((listp value)
@@ -138,7 +141,9 @@
                                   (etorrent-value-to-bencode (second x))))
                        (etorrent-hash-to-sorted-list value)
                        "")
-            "e"))))
+            "e"))
+   (t
+    (debug-print-to-buffer value))))
                          
 (defun etorrent-hash-to-sorted-list (hashtable)
   "Return a list that represent the hashtable."
@@ -183,6 +188,14 @@
 
 ;; Debug
 
-;(hash-dump-content
-; (etorrent-parse-torrent "/home/sverrej/Desktop/crysis.torrent"))
+(defun debug-print-to-buffer (msg)
+  (with-current-buffer (get-buffer-create "etorrent-debug")
+    (insert (concat (prin1-to-string msg) "\n"))))
 
+;(hash-dump-content
+; (etorrent-parse-torrent "/home/sverrej/Desktop/monsen.torrent"))
+
+(defun save-string-to-file (string filename)
+  (with-temp-buffer
+    (insert string)
+    (write-file filename)))
