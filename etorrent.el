@@ -31,41 +31,40 @@
 ;;;
 
 (defun etorrent-download-tracker-response (metainfo)
-;  (let* ((info-hash (etorrent-escape-url (sha1
+  (let* ((info-hash (etorrent-escape-url (sha1
                                           (etorrent-value-to-bencode
-                                           (gethash "info" metainfo)))
-;;;          (peer-id "-AZ2060-QWERTYUIOPAS")
-;;;          (port "6889")
-;;;          (uploaded "0")
-;;;          (downloaded "0")
-;;;          (left "0")
-;;;          (url (concat (gethash "announce" metainfo)
-;;;                       "?"
-;;;                       "info-hash=" info-hash "&"
-;;;                       "peer-id=" peer-id "&"
-;;;                       "port=" port "&"
-;;;                       "uploaded=" uploaded "&"
-;;;                       "downloaded=" downloaded "&"
-;;;                       "left=" left))
-;;;          (url-request-method "GET"))
-;;; ;;;          (result 
-;;; ;;; 	  (save-excursion
-;;; ;;; 	    (set-buffer (url-retrieve-synchronously url))
-;;; ;;;             (progn (goto-char (point-min))
-;;; ;;; 		   (delete-region (point-min) (search-forward "\n\n"))
-;;; ;;; 		   (buffer-substring (point-min) (point-max))))))
-;;;     url))
+                                           (gethash "info" metainfo))
+                                          nil nil t)))
+         (peer-id "-AZ2060-QWERTYUIOPAS")
+         (port "6969")
+         (uploaded "0")
+         (downloaded "0")
+         (left "0")
+         (url (concat (gethash "announce" metainfo)
+                      "?"
+                      "info_hash=" info-hash "&"
+                      "peer_id=" peer-id "&"
+                      "port=" port "&"
+                      "uploaded=" uploaded "&"
+                      "downloaded=" downloaded "&"
+                      "left=" left))
+         (url-request-method "GET"))
+    (save-excursion
+      (set-buffer (url-retrieve-synchronously url))
+      (progn (goto-char (point-min))
+             (delete-region (point-min) (search-forward "\n\n"))
+             (etorrent-bencode-to-value)))))
 
 (defun etorrent-parse-torrent (file)
   "Parses a bittorrent file into a Lisp datastructure"
-  (etorrent-metainfo-to-hash file))
+  (etorrent-bencode-to-hash file))
 
-(defun etorrent-metainfo-to-hash (file)
+(defun etorrent-bencode-to-hash (file)
   "Parses the torrent file and returns a hashtable"
   (let ((metainfo (make-hash-table :test 'equal)))
     (when (file-readable-p file)
       (with-temp-buffer
-        (insert-file-contents file)
+        (insert-file-contents-literally file)
         (goto-char (point-min))
         (etorrent-bencode-to-value)))))
 
@@ -99,16 +98,18 @@
 
 (defun etorrent-bencode-parse-string ()
   "A byte string is encoded as <length>:<contents>"
-  (let* ((length-string (buffer-substring (point) (- (search-forward ":") 1)))
+  (let* ((length-string
+          (buffer-substring-no-properties (point) (- (search-forward ":") 1)))
          (string-length (string-to-int length-string))
          (string-start (point)))
     (forward-char string-length)
-    (buffer-substring string-start (+ string-start string-length))))
+    (buffer-substring-no-properties string-start (+ string-start string-length))))
 
 (defun etorrent-bencode-parse-integer ()
   "integer encoded as i<number in base 10 notation>e"
   (forward-char)
-  (math-read-number (buffer-substring (point) (- (search-forward "e") 1))))
+  (math-read-number (buffer-substring-no-properties
+                     (point) (- (search-forward "e") 1))))
 
 (defun etorrent-bencode-parse-list ()
   "list of values is encoded as l<contents>e"
@@ -174,7 +175,7 @@
     (set-buffer-multibyte nil)
     (insert-file-contents file)
     (goto-char (point-min))
-    (buffer-substring (point-min) (point-max))))
+    (buffer-substring-no-properties (point-min) (point-max))))
 
 (defun hash-dump-content (hash)
   "Dumps the content of a hash as a key/value string"
@@ -195,7 +196,7 @@
 ;(hash-dump-content
 ; (etorrent-parse-torrent "/home/sverrej/Desktop/monsen.torrent"))
 
-(defun save-string-to-file (string filename)
+(defun save-string-to-file (filename string)
   (with-temp-buffer
     (insert string)
     (write-file filename)))
